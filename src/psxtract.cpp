@@ -1313,8 +1313,8 @@ int extract_and_convert_audio(FILE *psar, FILE *iso_table, int base_audio_offset
 #ifdef _WIN32
 			printf("WARNING: ATRAC3 codec not available - skipping audio conversion\n");
 #else
-			printf("WARNING: ffmpeg not found - skipping audio conversion\n");
-			printf("Install ffmpeg to enable ATRAC3 audio track conversion\n");
+			printf("WARNING: ATRAC3 audio decoding unavailable - skipping audio conversion\n");
+			printf("Install ffmpeg development libraries and rebuild to enable it\n");
 #endif
 			printf("Audio tracks remain as ATRAC3 files (*.AT3)\n\n");
 			num_tracks = 0; // Set to 0 so we skip WAV to BIN conversion too

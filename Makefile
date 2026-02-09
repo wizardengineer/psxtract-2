@@ -30,8 +30,18 @@ ifeq ($(BUILD_PLATFORM),posix)
   LDFLAGS =
   LIBS =
 
+  # Detect ffmpeg development libraries via pkg-config
+  FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil 2>/dev/null)
+  FFMPEG_LIBS   := $(shell pkg-config --libs   libavformat libavcodec libswresample libavutil 2>/dev/null)
+
   # Exclude gui.cpp and at3acm.cpp; include gui_cli_stubs.cpp instead
   CPP_SOURCES = $(SRCDIR)/psxtract.cpp $(SRCDIR)/crypto.cpp $(SRCDIR)/cdrom.cpp $(SRCDIR)/lz.cpp $(SRCDIR)/utils.cpp $(SRCDIR)/md5_verify.cpp $(SRCDIR)/cue_resources.cpp $(SRCDIR)/gui_cli_stubs.cpp
+
+  ifneq ($(FFMPEG_LIBS),)
+    CXXFLAGS += $(FFMPEG_CFLAGS) -DHAVE_FFMPEG
+    LIBS     += $(FFMPEG_LIBS)
+    CPP_SOURCES += $(SRCDIR)/at3acm_ffmpeg.cpp
+  endif
 
   CPP_OBJECTS = $(CPP_SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
   C_OBJECTS = $(C_SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
