@@ -26,14 +26,16 @@ make
 Requires a C/C++ toolchain (Xcode CLT on macOS, `build-essential` on Debian/Ubuntu,
 `base-devel` on Arch).
 
-For audio track conversion, install ffmpeg:
+For ATRAC3 audio track conversion, install the ffmpeg development libraries
+before building. The Makefile auto-detects them via `pkg-config`; if they are
+not found, psxtract still builds but audio tracks are left as `.AT3` files.
 
 ```
 # macOS
 brew install ffmpeg
 
 # Debian / Ubuntu
-sudo apt install ffmpeg
+sudo apt install libavformat-dev libavcodec-dev libswresample-dev libavutil-dev
 
 # Arch
 sudo pacman -S ffmpeg
@@ -63,8 +65,8 @@ but we keep the flag for nostalgia.
 
 **Audio decoding:**
 - **Windows:** The ATRAC3 ACM codec must be installed on the system.
-- **macOS / Linux:** ffmpeg must be installed and available on PATH. If ffmpeg
-  is not found, audio tracks are left as unconverted `.AT3` files.
+- **macOS / Linux:** Uses the ffmpeg libraries (libavcodec) linked at build
+  time. If built without ffmpeg, audio tracks are left as `.AT3` files.
 
 You may supply a KEYS.BIN file to the tool, but this is not necessary.
 Using the internal files' hashes, psxtract can calculate the key by itself.
