@@ -3,10 +3,20 @@
 // http://www.gnu.org/licenses/gpl-3.0.txt
 
 #include "utils.h"
+#include <stdio.h>
+
+#ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
 #include <direct.h>
-#include <stdio.h>
+#else
+#include <unistd.h>
+#include <stdlib.h>
+#include <limits.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+#endif
 
 bool isEmpty(unsigned char* buf, int buf_size)
 {
@@ -34,6 +44,8 @@ u64 se64(u64 i)
 		((i & 0x00ff000000000000) >> 40) | ((i & 0xff00000000000000) >> 56);
 }
 
+#ifdef _WIN32
+
 int get_exe_directory(char* buffer, int buffer_size)
 {
 	wchar_t wbuffer[_MAX_PATH];
@@ -41,19 +53,19 @@ int get_exe_directory(char* buffer, int buffer_size)
 	{
 		return -1;
 	}
-	
+
 	// Find the last backslash in the path, and null-terminate there to remove the executable name
 	wchar_t* last_backslash = wcsrchr(wbuffer, L'\\');
 	if (last_backslash) {
 		*last_backslash = L'\0';
 	}
-	
+
 	// Convert from wide char to multibyte using UTF-8 encoding
 	int result = WideCharToMultiByte(CP_UTF8, 0, wbuffer, -1, buffer, buffer_size, NULL, NULL);
 	if (result == 0) {
 		return -1;
 	}
-	
+
 	return 0;
 }
 
@@ -68,7 +80,7 @@ void save_original_working_directory()
 		g_original_working_dir[0] = 0; // Clear on failure
 		return;
 	}
-	
+
 	// Convert from wide char to multibyte using UTF-8 encoding
 	int result = WideCharToMultiByte(CP_UTF8, 0, wbuffer, -1, g_original_working_dir, _MAX_PATH, NULL, NULL);
 	if (result == 0) {
@@ -82,25 +94,25 @@ int build_output_path(const char* filename, char* output_path, int output_path_s
 {
 	// Use saved original directory, fallback to current if not set
 	const char* target_dir = (g_original_working_dir[0] != 0) ? g_original_working_dir : ".";
-	
+
 	// Use PathCombine to properly build the path
 	char relative_path[_MAX_PATH];
 	if (PathCombineA(relative_path, target_dir, filename) == NULL) {
 		return -1; // PathCombine failed
 	}
-	
+
 	// Convert to full path
 	if (_fullpath(output_path, relative_path, output_path_size) == NULL) {
 		// If _fullpath fails, try GetFullPathName
 		if (GetFullPathName(relative_path, output_path_size, output_path, NULL) == 0) {
 			// If both fail, just copy the relative path
-			if (strlen(relative_path) >= output_path_size) {
+			if (strlen(relative_path) >= (size_t)output_path_size) {
 				return -1; // Path too long
 			}
 			strcpy(output_path, relative_path);
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -112,10 +124,10 @@ int utf8_file_exists(const char* filename)
 		return -1;
 	}
 	MultiByteToWideChar(CP_UTF8, 0, filename, -1, wfilename, wlen);
-	
+
 	DWORD attrs = GetFileAttributesW(wfilename);
 	free(wfilename);
-	
+
 	return (attrs != INVALID_FILE_ATTRIBUTES) ? 0 : -1;
 }
 
@@ -127,7 +139,7 @@ FILE* utf8_fopen(const char* filename, const char* mode)
 		return NULL;
 	}
 	MultiByteToWideChar(CP_UTF8, 0, filename, -1, wfilename, wlen);
-	
+
 	int wmode_len = MultiByteToWideChar(CP_UTF8, 0, mode, -1, NULL, 0);
 	wchar_t* wmode = (wchar_t*)malloc(wmode_len * sizeof(wchar_t));
 	if (!wmode) {
@@ -135,11 +147,95 @@ FILE* utf8_fopen(const char* filename, const char* mode)
 		return NULL;
 	}
 	MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, wmode_len);
-	
+
 	FILE* file = _wfopen(wfilename, wmode);
-	
+
 	free(wfilename);
 	free(wmode);
-	
+
 	return file;
 }
+
+#else // POSIX
+
+int get_exe_directory(char* buffer, int buffer_size)
+{
+#ifdef __APPLE__
+	char raw_path[PATH_MAX];
+	uint32_t size = sizeof(raw_path);
+	if (_NSGetExecutablePath(raw_path, &size) != 0) {
+		return -1;
+	}
+	char resolved[PATH_MAX];
+	if (realpath(raw_path, resolved) == NULL) {
+		return -1;
+	}
+	// Strip executable name
+	char* last_slash = strrchr(resolved, '/');
+	if (last_slash) {
+		*last_slash = '\0';
+	}
+	if ((int)strlen(resolved) >= buffer_size) {
+		return -1;
+	}
+	strcpy(buffer, resolved);
+	return 0;
+#else
+	// Linux: read /proc/self/exe
+	ssize_t len = readlink("/proc/self/exe", buffer, buffer_size - 1);
+	if (len < 0) {
+		return -1;
+	}
+	buffer[len] = '\0';
+	char* last_slash = strrchr(buffer, '/');
+	if (last_slash) {
+		*last_slash = '\0';
+	}
+	return 0;
+#endif
+}
+
+static char g_original_working_dir[PATH_MAX] = {0};
+
+void save_original_working_directory()
+{
+	if (getcwd(g_original_working_dir, sizeof(g_original_working_dir)) == NULL) {
+		g_original_working_dir[0] = 0;
+	}
+}
+
+int build_output_path(const char* filename, char* output_path, int output_path_size)
+{
+	const char* target_dir = (g_original_working_dir[0] != 0) ? g_original_working_dir : ".";
+
+	char relative_path[PATH_MAX];
+	snprintf(relative_path, sizeof(relative_path), "%s/%s", target_dir, filename);
+
+	char resolved[PATH_MAX];
+	if (realpath(relative_path, resolved) != NULL) {
+		if ((int)strlen(resolved) >= output_path_size) {
+			return -1;
+		}
+		strcpy(output_path, resolved);
+	} else {
+		// realpath fails if the file doesn't exist yet; just use the joined path
+		if ((int)strlen(relative_path) >= output_path_size) {
+			return -1;
+		}
+		strcpy(output_path, relative_path);
+	}
+
+	return 0;
+}
+
+int utf8_file_exists(const char* filename)
+{
+	return (access(filename, F_OK) == 0) ? 0 : -1;
+}
+
+FILE* utf8_fopen(const char* filename, const char* mode)
+{
+	return fopen(filename, mode);
+}
+
+#endif

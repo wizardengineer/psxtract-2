@@ -40,7 +40,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
 #include <malloc.h>
+#else
+#include <unistd.h>
+#ifndef _fseeki64
+#define _fseeki64 fseeko
+#endif
+#ifndef _ftelli64
+#define _ftelli64 ftello
+#endif
+#endif
 
 extern "C" {
 	#include "libkirk/kirk_engine.h"

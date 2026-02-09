@@ -1,27 +1,61 @@
-# Cross-compilation Makefile for psxtract (Windows target from Linux)
+# Makefile for psxtract
+# Supports native builds on macOS/Linux and cross-compilation for Windows
 
-CC = i686-w64-mingw32-gcc
-CXX = i686-w64-mingw32-g++
-WINDRES = i686-w64-mingw32-windres
-TARGET = psxtract.exe
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 
-CXXFLAGS = -std=c++11 -O2 -Wall -D_CRT_SECURE_NO_WARNINGS
-CFLAGS = -O2 -Wall
-LDFLAGS = -static-libgcc -static-libstdc++
-LIBS = -lkernel32 -luser32 -ladvapi32 -lmsacm32 -lgdi32 -lcomctl32 -lcomdlg32 -lshell32 -lole32 -lshlwapi
+ifeq ($(UNAME_S),Windows)
+  BUILD_PLATFORM := windows
+else ifeq ($(findstring MINGW,$(UNAME_S)),MINGW)
+  BUILD_PLATFORM := windows
+else ifeq ($(findstring MSYS,$(UNAME_S)),MSYS)
+  BUILD_PLATFORM := windows
+else
+  BUILD_PLATFORM := posix
+endif
 
 SRCDIR = src
 OBJDIR = obj
 
-# Source files
-CPP_SOURCES = $(SRCDIR)/psxtract.cpp $(SRCDIR)/crypto.cpp $(SRCDIR)/cdrom.cpp $(SRCDIR)/lz.cpp $(SRCDIR)/utils.cpp $(SRCDIR)/md5_verify.cpp $(SRCDIR)/at3acm.cpp $(SRCDIR)/gui.cpp $(SRCDIR)/cue_resources.cpp
+# Common C source files (portable)
 C_SOURCES = $(SRCDIR)/libkirk/AES.c $(SRCDIR)/libkirk/amctrl.c $(SRCDIR)/libkirk/bn.c $(SRCDIR)/libkirk/DES.c $(SRCDIR)/libkirk/ec.c $(SRCDIR)/libkirk/kirk_engine.c $(SRCDIR)/libkirk/SHA1.c
 
-# Object files
-CPP_OBJECTS = $(CPP_SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
-C_OBJECTS = $(C_SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
-RESOURCE_OBJECTS = $(OBJDIR)/psxtract_resources.o $(OBJDIR)/atrac3_resources.o
-OBJECTS = $(CPP_OBJECTS) $(C_OBJECTS) $(RESOURCE_OBJECTS)
+ifeq ($(BUILD_PLATFORM),posix)
+  # --- Native POSIX build (macOS / Linux) ---
+  CC = cc
+  CXX = c++
+  TARGET = psxtract
+
+  CXXFLAGS = -std=c++11 -O2 -Wall -D_CRT_SECURE_NO_WARNINGS -DPOSIX_BUILD
+  CFLAGS = -O2 -Wall -DPOSIX_BUILD
+  LDFLAGS =
+  LIBS =
+
+  # Exclude gui.cpp and at3acm.cpp; include gui_cli_stubs.cpp instead
+  CPP_SOURCES = $(SRCDIR)/psxtract.cpp $(SRCDIR)/crypto.cpp $(SRCDIR)/cdrom.cpp $(SRCDIR)/lz.cpp $(SRCDIR)/utils.cpp $(SRCDIR)/md5_verify.cpp $(SRCDIR)/cue_resources.cpp $(SRCDIR)/gui_cli_stubs.cpp
+
+  CPP_OBJECTS = $(CPP_SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+  C_OBJECTS = $(C_SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+  OBJECTS = $(CPP_OBJECTS) $(C_OBJECTS)
+
+else
+  # --- Windows cross-compilation (MinGW) ---
+  CC = i686-w64-mingw32-gcc
+  CXX = i686-w64-mingw32-g++
+  WINDRES = i686-w64-mingw32-windres
+  TARGET = psxtract.exe
+
+  CXXFLAGS = -std=c++11 -O2 -Wall -D_CRT_SECURE_NO_WARNINGS
+  CFLAGS = -O2 -Wall
+  LDFLAGS = -static-libgcc -static-libstdc++
+  LIBS = -lkernel32 -luser32 -ladvapi32 -lmsacm32 -lgdi32 -lcomctl32 -lcomdlg32 -lshell32 -lole32 -lshlwapi
+
+  CPP_SOURCES = $(SRCDIR)/psxtract.cpp $(SRCDIR)/crypto.cpp $(SRCDIR)/cdrom.cpp $(SRCDIR)/lz.cpp $(SRCDIR)/utils.cpp $(SRCDIR)/md5_verify.cpp $(SRCDIR)/at3acm.cpp $(SRCDIR)/gui.cpp $(SRCDIR)/cue_resources.cpp
+
+  CPP_OBJECTS = $(CPP_SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+  C_OBJECTS = $(C_SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+  RESOURCE_OBJECTS = $(OBJDIR)/psxtract_resources.o $(OBJDIR)/atrac3_resources.o
+  OBJECTS = $(CPP_OBJECTS) $(C_OBJECTS) $(RESOURCE_OBJECTS)
+endif
 
 # Create obj directory structure
 OBJDIRS = $(OBJDIR) $(OBJDIR)/libkirk
@@ -31,7 +65,6 @@ all: $(TARGET)
 $(TARGET): $(OBJDIRS) $(OBJECTS)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS) $(LIBS)
 	@echo "Build complete: $(TARGET)"
-
 
 # Create directories
 $(OBJDIRS):
@@ -45,15 +78,19 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Compile resources
+# Windows resource compilation (only used for Windows builds)
 $(OBJDIR)/psxtract_resources.o: src/psxtract.rc
 	$(WINDRES) $< -o $@
 
 $(OBJDIR)/atrac3_resources.o: src/atrac3_resources.rc
 	$(WINDRES) $< -o $@
 
+# Explicit Windows cross-compile target
+windows:
+	$(MAKE) BUILD_PLATFORM=windows
+
 clean:
-	rm -rf $(OBJDIR) $(TARGET)
+	rm -rf $(OBJDIR) psxtract psxtract.exe
 
 install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/ 2>/dev/null || echo "Note: Could not install to /usr/local/bin (may need sudo)"
@@ -71,4 +108,4 @@ release: $(TARGET)
 	@echo "Contents:"
 	@unzip -l psxtract-2.zip
 
-.PHONY: all clean install release
+.PHONY: all clean install release windows

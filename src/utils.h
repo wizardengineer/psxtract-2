@@ -17,5 +17,8 @@ int build_output_path(const char* filename, char* output_path, int output_path_s
 int utf8_file_exists(const char* filename);
 FILE* utf8_fopen(const char* filename, const char* mode);
 
-// Automatically replace all fopen calls with Unicode-aware version
+// On Windows, replace fopen with UTF-8 aware version.
+// On POSIX, fopen already handles UTF-8 natively.
+#ifdef _WIN32
 #define fopen utf8_fopen
+#endif

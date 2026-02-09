@@ -5,13 +5,35 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <cstdint>
-#include <direct.h>
 #include <sys/stat.h>
-#include <windows.h>
-#include <shlwapi.h>
 #include <cstring>
 #include <ctype.h>
 #include <stdio.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <windows.h>
+#include <shlwapi.h>
+#else
+#include <unistd.h>
+#include <limits.h>
+#include <stdlib.h>
+
+// Compatibility macros for POSIX
+#ifndef _MAX_PATH
+#define _MAX_PATH PATH_MAX
+#endif
+#ifndef MAX_PATH
+#define MAX_PATH PATH_MAX
+#endif
+
+#define _mkdir(x) mkdir((x), 0755)
+#define _chdir chdir
+#define _rmdir rmdir
+#define _getcwd getcwd
+#define _fseeki64 fseeko
+#define _ftelli64 ftello
+#endif
 
 #include "cdrom.h"
 #include "lz.h"

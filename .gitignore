@@ -6,3 +6,8 @@ CLAUDE.md
 obj/
 /*.exe
 /*.dll
+.DS_Store
+.claude/
+TEMP/
+psxtract
+

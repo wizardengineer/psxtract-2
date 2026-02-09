@@ -136,6 +136,7 @@ static char* get_next_line(char** data_ptr, char* line_buffer, size_t buffer_siz
 static PREGAP_OVERRIDE* g_dynamic_pregap_override = NULL;
 
 char* exec(const char* cmd) {
+#ifdef _WIN32
     HANDLE hRead, hWrite;
     SECURITY_ATTRIBUTES saAttr;
     char* output = NULL;
@@ -169,7 +170,7 @@ char* exec(const char* cmd) {
         return NULL;
     }
     MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, wlen);
-    
+
     BOOL bSuccess = CreateProcessW(NULL, wcmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
     free(wcmd);
     if (!bSuccess) {
@@ -195,6 +196,25 @@ char* exec(const char* cmd) {
     CloseHandle(pi.hThread);
 
     return output;
+#else
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) return NULL;
+
+    char* output = NULL;
+    size_t outputSize = 0;
+    char chBuf[4096];
+    size_t bytesRead;
+
+    while ((bytesRead = fread(chBuf, 1, sizeof(chBuf), pipe)) > 0) {
+        output = (char*)realloc(output, outputSize + bytesRead + 1);
+        memcpy(output + outputSize, chBuf, bytesRead);
+        outputSize += bytesRead;
+        output[outputSize] = '\0';
+    }
+
+    pclose(pipe);
+    return output;
+#endif
 }
 
 unsigned long extract_startdat(FILE *psar, bool isMultidisc)
@@ -865,11 +885,19 @@ int convert_at3_to_wav(int disc_num, int num_tracks)
 		char wav_filename[0x10];
 		audio_file_name(wav_filename, disc_num, i, (char*)"WAV");
 
+#ifdef _WIN32
 		printf("Converting %s to %s using ATRAC3 ACM...\n", at3_filename, wav_filename);
+#else
+		printf("Converting %s to %s using ffmpeg...\n", at3_filename, wav_filename);
+#endif
 		int conversion_result = convertAt3ToWav(at3_filename, wav_filename, at3hadid);
 		if (conversion_result != 0)
 		{
+#ifdef _WIN32
 			printf("ERROR: Failed to convert %s using ATRAC3 ACM\n", at3_filename);
+#else
+			printf("ERROR: Failed to convert %s using ffmpeg\n", at3_filename);
+#endif
 			return -1;
 		}
 		if (stat(wav_filename, &st) != 0 || st.st_size <= 44)
@@ -1282,7 +1310,12 @@ int extract_and_convert_audio(FILE *psar, FILE *iso_table, int base_audio_offset
 		HACMDRIVERID at3hadid = nullptr;
 		findAt3Driver(&at3hadid);
 		if (!at3hadid) {
+#ifdef _WIN32
 			printf("WARNING: ATRAC3 codec not available - skipping audio conversion\n");
+#else
+			printf("WARNING: ffmpeg not found - skipping audio conversion\n");
+			printf("Install ffmpeg to enable ATRAC3 audio track conversion\n");
+#endif
 			printf("Audio tracks remain as ATRAC3 files (*.AT3)\n\n");
 			num_tracks = 0; // Set to 0 so we skip WAV to BIN conversion too
 		} else {
@@ -1463,7 +1496,11 @@ PREGAP_OVERRIDE* parse_prebaked_cue_pregaps(char* disc_name)
     
     // Initialize the pregap override
     memset(pregap_override, 0, sizeof(PREGAP_OVERRIDE));
+#ifdef _WIN32
     pregap_override->game_id = _strdup(cue_name); // Store the disc name
+#else
+    pregap_override->game_id = strdup(cue_name); // Store the disc name
+#endif
     pregap_override->num_tracks = 0;
     
     char line[512];
@@ -2345,20 +2382,23 @@ int decrypt_multi_disc(FILE *psar, long long psar_size, long long startdat_offse
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
 	SetConsoleOutputCP(CP_UTF8);
-	
+#endif
+
 	save_original_working_directory();
-	
+
+#ifdef _WIN32
 	// Get Unicode command line and convert arguments to UTF-8
 	LPWSTR cmdLineW = GetCommandLineW();
 	int argcW = 0;
 	LPWSTR* argvW = CommandLineToArgvW(cmdLineW, &argcW);
-	
+
 	if (!argvW) {
 		printf("ERROR: Failed to parse Unicode command line\n");
 		return 1;
 	}
-	
+
 	// Convert wide char arguments to UTF-8 strings
 	char** utf8_argv = (char**)malloc(argcW * sizeof(char*));
 	if (!utf8_argv) {
@@ -2366,7 +2406,7 @@ int main(int argc, char **argv)
 		printf("ERROR: Failed to allocate memory for arguments\n");
 		return 1;
 	}
-	
+
 	for (int i = 0; i < argcW; i++) {
 		int len = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
 		utf8_argv[i] = (char*)malloc(len);
@@ -2382,23 +2422,29 @@ int main(int argc, char **argv)
 		}
 		WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, utf8_argv[i], len, NULL, NULL);
 	}
-	
+
 	LocalFree(argvW);
-	
+
 	// Use the converted UTF-8 arguments
 	argc = argcW;
 	argv = utf8_argv;
-	
-	// If no arguments provided, launch GUI
+#else
+	// On POSIX, argv is already UTF-8
+	char** utf8_argv = NULL; // Not allocated, no cleanup needed
+#endif
+
+	// If no arguments provided, launch GUI (or print usage on POSIX)
 	if (argc <= 1) {
+#ifdef _WIN32
 		// Clean up allocated arguments
 		for (int i = 0; i < argc; i++) {
 			free(utf8_argv[i]);
 		}
 		free(utf8_argv);
+#endif
 		return showGUI();
 	}
-	
+
 	if (argc > 5)
 	{
 		printf("*****************************************************\n");
@@ -2410,12 +2456,14 @@ int main(int argc, char **argv)
 		printf("EBOOT.PBP - Your PSOne Classic main PBP.\n");
 		printf("DOCUMENT.DAT - Game manual file (optional).\n");
 		printf("KEYS.BIN - Key file (optional).\n");
-		
+
+#ifdef _WIN32
 		// Clean up allocated arguments
 		for (int i = 0; i < argc; i++) {
 			free(utf8_argv[i]);
 		}
 		free(utf8_argv);
+#endif
 		return 0;
 	}
 
@@ -2425,7 +2473,7 @@ int main(int argc, char **argv)
 	// Check if we want to clean up temp files before exiting.
 	bool cleanup = false;
 	bool verbose = false;
-	
+
 	// Parse command line arguments
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-c")) {
@@ -2443,19 +2491,21 @@ int main(int argc, char **argv)
 	}
 
 	// Call the main extraction function
-	int result = psxtract_main(argv[arg_offset + 1], 
+	int result = psxtract_main(argv[arg_offset + 1],
 	                           (argc - arg_offset) >= 3 ? argv[arg_offset + 2] : NULL,
 	                           (argc - arg_offset) >= 4 ? argv[arg_offset + 3] : NULL,
 	                           cleanup,
 	                           verbose,
 	                           NULL);
-	
+
+#ifdef _WIN32
 	// Clean up allocated arguments
 	for (int i = 0; i < argc; i++) {
 		free(utf8_argv[i]);
 	}
 	free(utf8_argv);
-	
+#endif
+
 	return result;
 }
 
@@ -2532,13 +2582,21 @@ int psxtract_main(const char* pbp_file, const char* document_file, const char* k
 		if (cleanup) {
 			// In cleanup mode, automatically remove TEMP directory
 			printf("TEMP directory exists from previous run. Removing automatically (cleanup mode)...\n");
-			system("rmdir /S /Q TEMP");
+			#ifdef _WIN32
+		system("rmdir /S /Q TEMP");
+#else
+		system("rm -rf TEMP");
+#endif
 		} else {
 			if (isGUIMode()) {
 				// GUI mode - use dialog only
 				if (gui_prompt("TEMP directory already exists from a previous run.\nThis may contain files that could interfere with the current extraction.\n\nDelete TEMP directory and continue?", "TEMP Directory Exists")) {
 					printf("Removing existing TEMP directory...\n");
-					system("rmdir /S /Q TEMP");
+					#ifdef _WIN32
+		system("rmdir /S /Q TEMP");
+#else
+		system("rm -rf TEMP");
+#endif
 				} else {
 					printf("Extraction cancelled. Please manually remove TEMP directory and try again.\n");
 					return 1;
@@ -2554,7 +2612,11 @@ int psxtract_main(const char* pbp_file, const char* document_file, const char* k
 					char response = input[0];
 					if (response == 'y' || response == 'Y') {
 						printf("Removing existing TEMP directory...\n");
-						system("rmdir /S /Q TEMP");
+						#ifdef _WIN32
+		system("rmdir /S /Q TEMP");
+#else
+		system("rm -rf TEMP");
+#endif
 					} else {
 						printf("Extraction cancelled. Please manually remove TEMP directory and try again.\n");
 						return 1;
@@ -2675,7 +2737,11 @@ int psxtract_main(const char* pbp_file, const char* document_file, const char* k
 		if (!isGUIMode()) {
 			printf("[If you see errors above try running without -c to leave TEMP files in place in order to debug.]\n");
 		}
+		#ifdef _WIN32
 		system("rmdir /S /Q TEMP");
+#else
+		system("rm -rf TEMP");
+#endif
 	}
 	
 	
