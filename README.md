@@ -4,18 +4,56 @@ psxtract-2
 Tool to decrypt and convert PSOne Classics from PSP/PS3.
 Originally written by **Hykem**.
 
+This fork adds native macOS and Linux support (no Wine required).
+
 This tool allows you to decrypt a PSOne Classics EBOOT.PBP on your PC.
 It features a modified version of libkirk's source code to support DES
 encryption/decryption and the AMCTRL functions.
 Also features isofix code for ensuring finalized ISO matches real discs.
-And uses atrac3 ACM code for ATRAC3 decoding of CDDA audio tracks.
+On Windows, uses the ATRAC3 ACM codec for audio decoding. On macOS/Linux,
+uses ffmpeg instead.
+
+
+Building
+--------
+
+**macOS / Linux:**
+
+```
+make
+```
+
+Requires a C/C++ toolchain (Xcode CLT on macOS, `build-essential` on Debian/Ubuntu,
+`base-devel` on Arch).
+
+For audio track conversion, install ffmpeg:
+
+```
+# macOS
+brew install ffmpeg
+
+# Debian / Ubuntu
+sudo apt install ffmpeg
+
+# Arch
+sudo pacman -S ffmpeg
+```
+
+**Windows (cross-compile with MinGW):**
+
+```
+make windows
+```
+
+Or build natively on Windows with the MinGW toolchain.
 
 
 Notes
 -------
 
-Output of running psxtract.exe EBOOT.PBP is two files - CDROM.BIN and
-CDROM.CUE in the current directory. You should know what to do with those.
+Output of running `psxtract EBOOT.PBP` (or `psxtract.exe` on Windows) is two
+files - CDROM.BIN and CDROM.CUE in the current directory. You should know what
+to do with those.
 
 Using the "-c" option on the command line, psxtract will clean up any
 temporary files it generates while it runs (of which there are many).
@@ -23,18 +61,15 @@ This flag is kept for backwards compatibility with old psxtract that used
 it to force CDROM creation. Current version always creates a BIN/CUE pair
 but we keep the flag for nostalgia.
 
-atrac3 ACM codec must be installed on the system for ATRAC3 audio decoding of CDDA tracks.
+**Audio decoding:**
+- **Windows:** The ATRAC3 ACM codec must be installed on the system.
+- **macOS / Linux:** ffmpeg must be installed and available on PATH. If ffmpeg
+  is not found, audio tracks are left as unconverted `.AT3` files.
 
 You may supply a KEYS.BIN file to the tool, but this is not necessary.
 Using the internal files' hashes, psxtract can calculate the key by itself.
 
 Game file manual decryption is also supported (DOCUMENT.DAT).
-
-Native Linux code has diverged significantly and has been removed. In addition
-ATRAC3 support essentially requires Windows so any idea of doing a full posix port
-has been abandoned. However, the Windows build has been developed/built/run on
-Linux using mingw and wine. As a result this tool should work fine on Linux or OSX,
-simply use wine to run it.
 
 For more details about the algorithms involved in the extraction process
 please check the following sources:
